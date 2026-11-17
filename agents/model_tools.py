@@ -18,16 +18,15 @@ def check_name(name):
         raise ValueError("Invalid name: " + name)
     return name
 
-
 def run_query(sql):
-    query_job = client.query(sql)
+    job_config = bigquery.QueryJobConfig(use_query_cache=False)
+    query_job = client.query(sql, job_config=job_config)
     rows = query_job.result()
 
     results = []
     for row in rows:
         results.append(dict(row.items()))
     return results
-
 
 def list_model_options(task_type: str = ""):
     """Lists the model types that can be trained. task_type is "classification", "regression", or empty for both."""
@@ -38,8 +37,7 @@ def list_model_options(task_type: str = ""):
     else:
         return {"ok": True, "classification": CLASSIFICATION_MODELS, "regression": REGRESSION_MODELS}
 
-
-def train_model(table: str, target: str, model_type: str, model_name: str, exclude_columns: list[str] = []):
+def train_model(table: str, target: str, model_type: str, model_name: str):
     """Trains a BigQuery ML model on a table (like "agent_data.student_por") to predict the target column."""
     try:
         model_type = model_type.upper()
@@ -51,18 +49,6 @@ def train_model(table: str, target: str, model_type: str, model_name: str, exclu
         check_name(target)
         check_name(model_name)
 
-        # columns to leave out
-        excludes = []
-        for col in exclude_columns:
-            if col != target:
-                check_name(col)
-                excludes.append(col)
-
-        if len(excludes) > 0:
-            select_part = "SELECT * EXCEPT(" + ", ".join(excludes) + ")"
-        else:
-            select_part = "SELECT *"
-
         sql = f"""
         CREATE OR REPLACE MODEL `{PROJECT}.{DATASET}.{model_name}`
         OPTIONS(
@@ -70,7 +56,7 @@ def train_model(table: str, target: str, model_type: str, model_name: str, exclu
           input_label_cols = ['{target}'],
           enable_global_explain = TRUE
         ) AS
-        {select_part}
+        SELECT *
         FROM `{PROJECT}.{table}`
         """
 
@@ -81,11 +67,9 @@ def train_model(table: str, target: str, model_type: str, model_name: str, exclu
             "model_name": model_name,
             "model_type": model_type,
             "target": target,
-            "excluded": excludes,
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
 
 def evaluate_model(model_name: str):
     """Gets the evaluation scores for a trained model."""
@@ -106,7 +90,6 @@ def evaluate_model(model_name: str):
         return {"ok": True, "model_name": model_name, "metrics": metrics}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
 
 def explain_model(model_name: str, top_n: int = 10):
     """Gets the most important features for a trained model."""
@@ -131,7 +114,6 @@ def explain_model(model_name: str, top_n: int = 10):
         return {"ok": True, "model_name": model_name, "top_features": features}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
 
 def predict(model_name: str, table: str, limit: int = 10):
     """Uses a trained model to make predictions on a table."""

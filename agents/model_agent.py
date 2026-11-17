@@ -1,26 +1,36 @@
 # Model agent - John
-# not hooked up to orchestrator yet
 
 from google.adk.agents.llm_agent import Agent
-from .model_tools import list_model_options, train_model, evaluate_model, explain_model, predict
+from .model_tools import train_model, evaluate_model, explain_model, predict
 
 model_agent = Agent(
     model="gemini-3.5-flash",
     name="model_agent",
-    description="Trains, evaluates and explains BigQuery ML models.",
+    description="Trains, evaluates and explains BigQuery ML models using a config it is given.",
     instruction="""
-You build machine learning models in BigQuery. You will be given a table and a target column.
+You build machine learning models in BigQuery using a config you are given.
+You do not make any choices yourself. Use the config exactly as given.
 
-First figure out if the target is a category (classification) or a number (regression).
-Use list_model_options to see what models you can use, and pick 2.
-Train both with train_model. Don't use ID columns or columns that give away the answer
-(for the student data that is G1, G2 and G3).
-Then use evaluate_model and explain_model on both.
-Pick the better one using roc_auc for classification or mean_absolute_error for regression.
-Don't just go off accuracy.
+The config will have:
+- table: the table to train on
+- target: the column to predict
+- model_type: the model to train
+- model_name: the name to save the model as 
 
-At the end report which models you trained, their scores, which one was best,
-the top features, and why you made your choices.
+Steps:
+1. Train the model with train_model using the config values.
+2. Run evaluate_model on it.
+3. Run explain_model on it.
+
+If the config is missing something, stop and say which value is missing.
+If a tool returns an error, stop and send the error exactly as it was returned.
+Don't guess, fill in missing values, or try to fix it yourself.
+
+At the end return only:
+- the config you used
+- the scores from evaluate_model
+- the top features from explain_model
+Don't interpret the results or make recommendations. Another agent does that.
 """,
-    tools=[list_model_options, train_model, evaluate_model, explain_model, predict],
+    tools=[train_model, evaluate_model, explain_model, predict],
 )
