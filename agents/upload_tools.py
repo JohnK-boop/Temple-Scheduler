@@ -1,6 +1,7 @@
 import os
 from google.adk.tools import ToolContext
 from google.cloud import storage
+from orchestrator.shared_key import CSV_URI, CSV_NAME
 
 BUCKET_NAME = "cis3203-uploads"
 client = storage.Client()
@@ -38,7 +39,8 @@ async def upload_csv(file_name: str, tool_context: ToolContext) -> dict:
     except Exception as e:
         return error(str(e))
     
-    tool_context.state["csv_uri"] = uri
+    tool_context.state[CSV_URI] = uri
+    tool_context.state[CSV_NAME] = name.replace("-", "_")
     return {
         "ok": True,
         "csv_name": name.replace("-", "_"),

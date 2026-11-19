@@ -230,3 +230,4 @@ __marimo__/
 *.json
 # Private data (e.g. student transcripts) — never commit
 data/private/
+.gitignore
