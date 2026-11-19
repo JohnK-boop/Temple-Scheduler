@@ -9,7 +9,7 @@ from .shared_key import RUN_HISTORY
 
 #agent側のorchestrator
 from .shared_key import log_start, log_end  
-#test用のエージェント切り替え可
+#test or real agents
 USE_TEST_AGENTS = True
 
 if USE_TEST_AGENTS:
@@ -17,12 +17,12 @@ if USE_TEST_AGENTS:
     data_agent = testagent.data_agent()
     model_agent = testagent.model_agent()
     report_writer = testagent.report_writer()
-else:#他のファイルからのエージェント
+else:#REAL AGNETS
     from agents.data_agent import data_agent
     from agents.model_agent import model_agent
     from agents.report_agent import report_writer
 
-MAX_ATTEMPTS = 3      # 1つのエージェントを最大何回まで試すか（最初の1回を含む）
+MAX_ATTEMPTS = 3      # How many times the agents are going to proceed when it fails
 RETRY_WAIT_SEC = 0.1 
 
 def _text_event(author, text, state_delta=None):
@@ -34,7 +34,7 @@ def _text_event(author, text, state_delta=None):
 
 
 class Orchestrator(BaseAgent):
-    """sub_agents を順に実行する。LLMは使わない。失敗したら「どこまで終わったか」を返して止まる。"""
+    "notes the history"
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         history = []
         done = []
@@ -50,15 +50,15 @@ class Orchestrator(BaseAgent):
                                     "attempt": attempt, "at": time.time(), "error": str(e)})
                     if attempt < MAX_ATTEMPTS:
                         await asyncio.sleep(RETRY_WAIT_SEC)
-                        continue  # もう一回走る
-                    msg = (f"処理が途中で止まりました。完了: {', '.join(done) if done else 'なし'} / "
-                           f"失敗: {sub.name}（{attempt}回試しました: {type(e).__name__}: {e}）")
+                        continue  # retry
+                    msg = (f"Process stoped. Done: {', '.join(done) if done else 'None'} / "
+                           f"Fail: {sub.name}（{attempt} attempts: {type(e).__name__}: {e}）")
                     yield _text_event(self.name, msg, {RUN_HISTORY: history})
                     return
                 history.append({"agent": sub.name, "status": "done",
                                 "attempt": attempt, "at": time.time()})
                 done.append(sub.name)
-                break  # 成功したので次の人へ
+                break  # done to the next person
         yield Event(author=self.name, actions=EventActions(state_delta={RUN_HISTORY: history}))
 sub_agents = [data_agent, model_agent, report_writer]
 
@@ -67,6 +67,4 @@ orchestrator = Orchestrator(
     description="Run data -> model -> report and return the final report. Make a report by coordinating agents, share information between them, and record how far it has been done or failed.",
     sub_agents = sub_agents
 )
-# root_agent = orchestrator
-#どこで結果が正しいか確認するんだろう
-#tools=[AgentTool(agent=orchestrator)]＃Chatに入れてもらわないと
+#tools=[AgentTool(agent=orchestrator)]＃Chat agent has to put this line
