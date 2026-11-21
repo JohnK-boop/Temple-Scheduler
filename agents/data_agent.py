@@ -1,9 +1,6 @@
 from google.adk.agents.llm_agent import Agent
 from google.adk import Workflow
 from google.cloud import bigquery
-import pandas as pd
-
-import bigframes.pandas as bpd
 
 import vertexai
 
@@ -17,21 +14,110 @@ bigquery_client = bigquery.Client(project=project_id)
 bigquery_client.create_table(f"{dataset_id}.{input_table_id}", exists_ok=True)
 bigquery_client.create_table(f"{dataset_id}.{output_table_id}", exists_ok=True)
 
-bpd.options.bigquery.project = project_id
-input_df = bpd.read_gbq(f"{project_id}.{dataset_id}.{input_table_id}")
+
+def prepare():
+    delete_table_job = bigquery_client.query(f"""
+    DROP TABLE IF EXISTS {dataset_id}.{input_table_id};
+                                             """)
+    delete_table_job.result()
+    delete_table_job = bigquery_client.query(f"""
+    DROP TABLE IF EXISTS {dataset_id}.temp_table;
+                                             """)
+    delete_table_job.result()
+    delete_table_job = bigquery_client.query(f"""
+    DROP TABLE IF EXISTS {dataset_id}.{output_table_id};
+                                             """)
+    delete_table_job.result()
+    
+    create_id_column_job = bigquery_client.query(f"""
+    CREATE TABLE {dataset_id}.{input_table_id}
+    (
+        row_id INT GENERATED ALWAYS AS IDENTITY(START WITH 0 INCREMENT BY 1)
+    );
+                                                 """)
+    create_id_column_job.result()
+    # load data from csv, insert row_id column
+    load_csv_job = bigquery_client.query(f"""
+    LOAD DATA OVERWRITE {dataset_id}.temp_table
+    FROM FILES (
+        format = 'CSV',
+        uris = ['gs://cis3203-uploads/student-por.csv']
+    );
+                                         """)
+    load_csv_job.result()
+
+    table_column_names = bigquery_client.query(f"""
+    SELECT column_name, data_type FROM {dataset_id}.INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'temp_table';
+                                               """)
+    names = list(table_column_names.result())
+    for name in names:
+        j = bigquery_client.query(f"""
+        ALTER TABLE {dataset_id}.{input_table_id}
+        ADD COLUMN {name[0]} {name[1]};
+                                  """)
+        j.result()
+
+    copy_columns_job = bigquery_client.query(f"""
+    INSERT INTO {dataset_id}.{input_table_id} ({",".join([n[0] for n in names])})
+    SELECT {",".join([n[0] for n in names])} FROM {dataset_id}.temp_table
+                                             """)
+    copy_columns_job.result()
+
+    create_id_column_job = bigquery_client.query(f"""
+    CREATE TABLE {dataset_id}.{output_table_id}
+    (
+        row_id INT
+    );
+                                                 """)
+    create_id_column_job.result()
+
+    insert_row_ids_job = bigquery_client.query(f"""
+    INSERT INTO {dataset_id}.{output_table_id} (row_id)
+    SELECT row_id FROM {dataset_id}.{input_table_id};
+                                               """);
+    insert_row_ids_job.result()
+    return { "success": True }
 
 def list_input_columns():
-    return {str(r[0]): str(r[1]) for r in zip(input_df.columns, input_df.dtypes)}
+    table_column_names = bigquery_client.query(f"""
+    SELECT column_name, data_type FROM {dataset_id}.INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = '{input_table_id}';
+                                               """)
+    names = list(table_column_names.result())
+    return {
+        "success": True,
+        "names": ["{\""+n[0]+"\":\""+n[1]+"}" for n in names if n[0] != "row_id"]
+    }
 
 def normalize_column(column_name: str):
-    max: float = input_df[column_name].max()
-    min: float= input_df[column_name].max()
+    
+    job = bigquery_client.query(f"""
+    ALTER TABLE {dataset_id}.{output_table_id}
+    DROP COLUMN IF EXISTS {column_name + "_normalized"};
+    ALTER TABLE {dataset_id}.{output_table_id}
+    ADD COLUMN {column_name + "_normalized"} FLOAT64;
 
-    @bpd.udf(dataset=dataset_id, name="normalize")
-    def normalize(x: float) -> float:
-        return (x - min) / (max - min)
-    input_df[column_name].apply(normalize)
-    # why isn't the column being updated in bigquery?
+    UPDATE 
+        {dataset_id}.{output_table_id} 
+        
+    SET {column_name + "_normalized"} = 
+        ({input_table_id}.{column_name} 
+            - (SELECT MIN({input_table_id}.{column_name}) FROM {dataset_id}.{input_table_id})
+         ) 
+        / (
+            (SELECT MAX({input_table_id}.{column_name}) FROM {dataset_id}.{input_table_id})
+            - (SELECT MIN({input_table_id}.{column_name}) FROM {dataset_id}.{input_table_id})
+        )
+        
+    FROM ((SELECT row_id, {column_name + "_normalized"} FROM {dataset_id}.{output_table_id}) AS output
+        JOIN {dataset_id}.{input_table_id} 
+        ON {input_table_id}.row_id 
+        = output.row_id)
+    WHERE {output_table_id}.row_id = {input_table_id}.row_id;
+                                """)
+    job.result()
+
     return {"success": True}
 
 client = vertexai.init(
