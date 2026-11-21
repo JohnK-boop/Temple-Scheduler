@@ -120,6 +120,109 @@ def normalize_column(column_name: str):
 
     return {"success": True}
 
+def copy_column(column_name):
+    job1 = bigquery_client.query(f"""
+    SELECT data_type FROM {dataset_id}.INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = '{input_table_id}'
+        AND COLUMN_NAME = '{column_name}'
+    LIMIT 1;
+                                 """)
+    data_type = list(job1.result())[0][0]
+
+    job2 = bigquery_client.query(f"""
+    ALTER TABLE {dataset_id}.{output_table_id}
+    DROP COLUMN IF EXISTS {column_name};
+    ALTER TABLE {dataset_id}.{output_table_id}
+    ADD COLUMN {column_name} {data_type};
+
+    UPDATE {dataset_id}.{output_table_id}
+    SET {column_name} = {input_table_id}.{column_name}
+    FROM (
+        (SELECT row_id, {column_name} FROM {dataset_id}.{output_table_id}) AS output
+        JOIN {dataset_id}.{input_table_id} 
+        ON {input_table_id}.row_id 
+        = output.row_id
+    )
+    WHERE {output_table_id}.row_id = {input_table_id}.row_id
+                                """)
+    job2.result()
+    return { "success": True,
+             "name": column_name,
+            "type": data_type
+    }
+
+def onehot_encode_column(column_name):
+    pass
+
+def logarithm_column(column_name):
+    job = bigquery_client.query(f"""
+    ALTER TABLE {dataset_id}.{output_table_id}
+    DROP COLUMN IF EXISTS {column_name + "_log"};
+    ALTER TABLE {dataset_id}.{output_table_id}
+    ADD COLUMN {column_name + "_log"} FLOAT64;
+
+    UPDATE 
+        {dataset_id}.{output_table_id} 
+        
+    SET {column_name + "_log"} = 
+        LOG({input_table_id}.{column_name})
+        
+    FROM ((SELECT row_id, {column_name + "_log"} FROM {dataset_id}.{output_table_id}) AS output
+        JOIN {dataset_id}.{input_table_id} 
+        ON {input_table_id}.row_id 
+        = output.row_id)
+    WHERE {output_table_id}.row_id = {input_table_id}.row_id;
+                                """)
+    job.result()
+
+    return {"success": True}
+
+def feature_cross(column_name_a, column_name_b):
+    pass
+
+def feature_difference(column_name_a, column_name_b):
+    pass
+
+def impute_mean(column_name):
+    job = bigquery_client.query(f"""
+    UPDATE {dataset_id}.{input_table_id}
+    SET {column_name} = (SELECT AVG({column_name}) FROM {dataset_id}.{input_table_id})
+    WHERE {column_name} IS NULL;
+                               """)
+    job.result()
+
+    return { "success": True }
+
+def impute_mode(column_name):
+    job1 = bigquery_client.query(f"""
+
+    UPDATE {dataset_id}.{input_table_id}
+    SET {column_name} = 
+        (SELECT {column_name} AS mode
+        FROM {dataset_id}.{input_table_id}
+        GROUP BY {column_name}
+        ORDER BY COUNT(*) DESC
+        LIMIT 1)
+    WHERE {column_name} IS NULL;
+                                """)
+    job1.result()
+
+
+    return {
+            "success": True
+    }
+
+def has_null(column_name):
+    job = bigquery_client.query(f"""
+    SELECT {column_name} 
+    FROM {dataset_id}.{input_table_id}
+    WHERE {column_name} IS NULL;
+                                   """)
+    rows = list(job.result())
+    return {
+        "has_nulls": len(rows) > 0
+    }
+
 client = vertexai.init(
     project='temple-scheduler-cisproj',
     location='us-central1'
@@ -175,11 +278,14 @@ feature_engineer = Agent(
 # Finally, report all the features chosen and decisions made, as well as the
 # reasoning behind those decisions.
 # """,
-    tools = [list_input_columns, normalize_column]
+    tools = [prepare, list_input_columns, normalize_column, copy_column,
+             onehot_encode_column, logarithm_column, feature_cross,
+             feature_difference, impute_mean, impute_mode,
+             has_null]
 )
 
 data_agent = Workflow(
-    name="root_agent",
+    name="data_agent",
     edges=[
         ("START", feature_engineer)
     ]
