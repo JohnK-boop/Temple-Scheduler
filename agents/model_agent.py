@@ -32,5 +32,6 @@ At the end return only:
 - the top features from explain_model
 Don't interpret the results or make recommendations. Another agent does that.
 """,
+    output_key="model_result",
     tools=[train_model, evaluate_model, explain_model, predict],
 )
