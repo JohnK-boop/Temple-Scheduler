@@ -37,13 +37,17 @@ def list_model_options(task_type: str = ""):
     else:
         return {"ok": True, "classification": CLASSIFICATION_MODELS, "regression": REGRESSION_MODELS}
 
-def train_model(table: str, target: str, model_type: str, model_name: str):
-    """Trains a BigQuery ML model on a table (like "agent_data.student_por") to predict the target column."""
+def train_model(table: str, target: str, model_type: str, model_name: str = ""):
+    """Trains a BigQuery ML model on a table (like "agent_data.student_por") to predict the target column.
+    Leave model_name blank to get an automatic versioned name."""
     try:
         model_type = model_type.upper()
 
         if model_type not in CLASSIFICATION_MODELS and model_type not in REGRESSION_MODELS:
             return {"ok": False, "error": "Unknown model type " + model_type, "hint": "use list_model_options"}
+
+        if model_name == "":
+            model_name = make_model_name(table, model_type)
 
         check_name(table)
         check_name(target)
@@ -141,3 +145,19 @@ def predict(model_name: str, table: str, limit: int = 10):
         return {"ok": True, "model_name": model_name, "predictions": predictions}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+def make_model_name(table: str, model_type: str) -> str:
+    """Makes the next unused model name: <table>_<model_type>_v<N>."""
+    if model_type not in CLASSIFICATION_MODELS and model_type not in REGRESSION_MODELS:
+        raise ValueError("Unknown model type " + model_type + ". Use list_model_options.")
+
+    name = (table.split(".")[-1] + "_" + model_type).lower()
+
+    nums = []
+    for m in client.list_models(f"{PROJECT}.{DATASET}"):
+        if m.model_id.startswith(name + "_v"):
+            version = m.model_id.rsplit("_v", 1)[1]
+            if version.isdigit():
+                nums.append(int(version))
+
+    return f"{name}_v{max(nums, default=0) + 1}"

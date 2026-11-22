@@ -8,3 +8,5 @@ REPORT = "report"               # report_writer が書く: 最終レポート
 RUN_HISTORY = "run_history"     # オーケストレーターが自動で書く
 CSV_URI = "csv_uri"             # upload_csv gs:// path to the uploaded CSV
 CSV_NAME = "csv_name"           # upload_csv clean name for table name
+TARGET_COLUMN = "target_column" # chat_agent writes: column the user wants to predict
+MODEL_TYPE = "model_type"       # chat_agent writes: model type the user chose
