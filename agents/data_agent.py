@@ -15,6 +15,11 @@ bigquery_client.create_table(f"{dataset_id}.{input_table_id}", exists_ok=True)
 bigquery_client.create_table(f"{dataset_id}.{output_table_id}", exists_ok=True)
 
 
+"""
+Prepares the environment for feature engineering work to be performed. 
+Does not take any arguments. Using this tool a second time may destroy existing
+feature engineering work.
+"""
 def prepare():
     delete_table_job = bigquery_client.query(f"""
     DROP TABLE IF EXISTS {dataset_id}.{input_table_id};
@@ -79,6 +84,10 @@ def prepare():
     insert_row_ids_job.result()
     return { "success": True }
 
+"""
+Lists the names and datatypes of all the columns in the input table.
+Does not take any arguments.
+"""
 def list_input_columns():
     table_column_names = bigquery_client.query(f"""
     SELECT column_name, data_type FROM {dataset_id}.INFORMATION_SCHEMA.COLUMNS
@@ -90,6 +99,27 @@ def list_input_columns():
         "names": ["{\""+n[0]+"\":\""+n[1]+"}" for n in names if n[0] != "row_id"]
     }
 
+"""
+Lists the names and datatypes of all the columns in the output table.
+Does not take any arguments.
+"""
+def list_output_columns():
+    table_column_names = bigquery_client.query(f"""
+    SELECT column_name, data_type FROM {dataset_id}.INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = '{output_table_id}';
+                                               """)
+    names = list(table_column_names.result())
+    return {
+        "success": True,
+        "names": ["{\""+n[0]+"\":\""+n[1]+"}" for n in names if n[0] != "row_id"]
+    }
+
+"""
+For the named column in the input table, creates a column in the output table
+that stores the values from the input column normalized to the range 0-1. Does
+not work for data that is not numeric.
+@param column_name: the name of the column to normalize.
+"""
 def normalize_column(column_name: str):
     
     job = bigquery_client.query(f"""
@@ -120,6 +150,10 @@ def normalize_column(column_name: str):
 
     return {"success": True}
 
+"""
+Copies a column of data from the input table to the output table unchanged.
+@param column_name: the name of the column to copy
+"""
 def copy_column(column_name):
     job1 = bigquery_client.query(f"""
     SELECT data_type FROM {dataset_id}.INFORMATION_SCHEMA.COLUMNS
@@ -154,6 +188,43 @@ def copy_column(column_name):
 def onehot_encode_column(column_name):
     pass
 
+"""
+Places a numerical encoding of string data in the input column into the output
+table. Each unique string value in the column is given its own integer to
+represent it.
+@param column_name: the name of the column to encode
+"""
+def numerical_encode_column(column_name):
+    job1 = bigquery_client.query(f"""
+    ALTER TABLE {dataset_id}.{output_table_id}
+    DROP COLUMN IF EXISTS {column_name + "_numeric"};
+    ALTER TABLE {dataset_id}.{output_table_id}
+    ADD COLUMN {column_name + "_numeric"} INT64;
+    SELECT {column_name} 
+    FROM {dataset_id}.{input_table_id} 
+    GROUP BY {column_name}
+                                 """)
+    variants = job1.result()
+    for num, v in enumerate(variants):
+        jobi = bigquery_client.query(f"""
+        UPDATE {dataset_id}.{output_table_id}
+        SET {column_name + "_numeric"} = {num}
+        FROM ((SELECT row_id, {column_name + "_numeric"} FROM {dataset_id}.{output_table_id}) AS output
+            JOIN {dataset_id}.{input_table_id} 
+            ON {input_table_id}.row_id 
+            = output.row_id)
+        WHERE {output_table_id}.row_id = {input_table_id}.row_id 
+            AND {input_table_id}.{column_name} = "{v[0]}";
+                                     """)
+        jobi.result()
+    return {"success": True}
+
+"""
+For the named column in the input table, creates a column in the output table
+that stores the logarithm of the values from the input column. Does
+not work for data that is not numeric.
+@param column_name: the column to take the logarithm of.
+"""
 def logarithm_column(column_name):
     job = bigquery_client.query(f"""
     ALTER TABLE {dataset_id}.{output_table_id}
@@ -177,12 +248,77 @@ def logarithm_column(column_name):
 
     return {"success": True}
 
-def feature_cross(column_name_a, column_name_b):
-    pass
+"""
+Creates a new calculated feature that is the cross of two existing features.
+The values in the new feature are the product of the values of the source
+features. Only works for numeric features.
+@param column_name_a: the name of the first feature to be crossed.
+@param a_is_from_input: boolean value indicating whether the first feature to be
+crossed should come from the input table or the output table.
+@param column_name_b: the name of the second feature to be crossed.
+@param b_is_from_input: boolean value indicating whether the second feature to be
+crossed should come from the input table or the output table.
+"""
+def feature_cross(column_name_a, a_is_from_input, column_name_b, b_is_from_input):
+    job = bigquery_client.query(f"""
+    ALTER TABLE {dataset_id}.{output_table_id}
+    DROP COLUMN IF EXISTS {column_name_a + "_cross_" + column_name_b};
+    ALTER TABLE {dataset_id}.{output_table_id}
+    ADD COLUMN {column_name_a + "_cross_" + column_name_b} FLOAT64;
 
-def feature_difference(column_name_a, column_name_b):
-    pass
+    UPDATE {dataset_id}.{output_table_id}
+    SET {column_name_a + "_cross_" + column_name_b} =
+        {input_table_id if a_is_from_input else output_table_id}.{column_name_a}
+        *
+        {input_table_id if b_is_from_input else output_table_id}.{column_name_b}
+    FROM ({dataset_id}.{output_table_id} AS output
+          JOIN {dataset_id}.{input_table_id}
+          ON {input_table_id}.row_id
+          = output.row_id)
+    WHERE {output_table_id}.row_id = {input_table_id}.row_id;
+                                """)
+    job.result()
 
+    return { "success": True }
+
+"""
+Creates a new calculated feature that is the difference of two existing features.
+Only works for numeric features.
+@param column_name_a: the name of the first feature to be crossed.
+@param a_is_from_input: boolean value indicating whether the first feature to be
+crossed should come from the input table or the output table.
+@param column_name_b: the name of the second feature to be crossed.
+@param b_is_from_input: boolean value indicating whether the second feature to be
+crossed should come from the input table or the output table.
+"""
+def feature_difference(column_name_a, a_is_from_input, column_name_b,
+                       b_is_from_input):
+    job = bigquery_client.query(f"""
+    ALTER TABLE {dataset_id}.{output_table_id}
+    DROP COLUMN IF EXISTS {column_name_a + "_diff_" + column_name_b};
+    ALTER TABLE {dataset_id}.{output_table_id}
+    ADD COLUMN {column_name_a + "_diff_" + column_name_b} FLOAT64;
+
+    UPDATE {dataset_id}.{output_table_id}
+    SET {column_name_a + "_diff_" + column_name_b} =
+        {input_table_id if a_is_from_input else output_table_id}.{column_name_a}
+        -
+        {input_table_id if b_is_from_input else output_table_id}.{column_name_b}
+    FROM ({dataset_id}.{output_table_id} AS output
+          JOIN {dataset_id}.{input_table_id}
+          ON {input_table_id}.row_id
+          = output.row_id)
+    WHERE {output_table_id}.row_id = {input_table_id}.row_id;
+                                """)
+    job.result()
+
+    return { "success": True }
+
+"""
+For a numeric column in the input table, replace null values with the mean non-null value of that
+column. 
+@param column_name: the name of the column to impute.
+"""
 def impute_mean(column_name):
     job = bigquery_client.query(f"""
     UPDATE {dataset_id}.{input_table_id}
@@ -192,7 +328,11 @@ def impute_mean(column_name):
     job.result()
 
     return { "success": True }
-
+"""
+For a numeric or categorical column in the input table, replace null values with
+the most common (mode) value of that column. 
+@param column_name: the name of the column to impute.
+"""
 def impute_mode(column_name):
     job1 = bigquery_client.query(f"""
 
@@ -212,6 +352,10 @@ def impute_mode(column_name):
             "success": True
     }
 
+"""
+Checks whether a column in the input table has null values or not.
+@param column_name: the name of the column to check
+"""
 def has_null(column_name):
     job = bigquery_client.query(f"""
     SELECT {column_name} 
@@ -278,8 +422,8 @@ feature_engineer = Agent(
 # Finally, report all the features chosen and decisions made, as well as the
 # reasoning behind those decisions.
 # """,
-    tools = [prepare, list_input_columns, normalize_column, copy_column,
-             onehot_encode_column, logarithm_column, feature_cross,
+    tools = [prepare, list_input_columns, list_output_columns, normalize_column, copy_column, 
+             logarithm_column, feature_cross,
              feature_difference, impute_mean, impute_mode,
              has_null]
 )
@@ -290,3 +434,7 @@ data_agent = Workflow(
         ("START", feature_engineer)
     ]
 )
+
+## take target column as input
+## report success or failure
+## etc
