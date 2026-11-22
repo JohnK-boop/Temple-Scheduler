@@ -18,9 +18,9 @@ if USE_TEST_AGENTS:
     model_agent = testagent.model_agent()
     report_writer = testagent.report_writer()
 else:#REAL AGNETS
-    from agents.data_agent import data_agent
+    from agents.data_agent import as feature_engineer as data_agent
     from agents.model_agent import model_agent
-    from agents.report_agent import report_writer
+    from agents.results_limitations.agent import as report_writer
 
 MAX_ATTEMPTS = 3      # How many times the agents are going to proceed when it fails
 RETRY_WAIT_SEC = 0.1 
@@ -67,4 +67,3 @@ orchestrator = Orchestrator(
     description="Run data -> model -> report and return the final report. Make a report by coordinating agents, share information between them, and record how far it has been done or failed.",
     sub_agents = sub_agents
 )
-#tools=[AgentTool(agent=orchestrator)]＃Chat agent has to put this line
