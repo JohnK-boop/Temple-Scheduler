@@ -1,5 +1,5 @@
 "Window for agents to put information that can be shared with other agents."
-
+##Not USED!!
 # ===== 共有する state のキー名（全員共通）=====
 USER_REQUEST = "user_request"   # chat_agent    が書く: 分析したい内容
 DATA_RESULT = "data_result"     # data_agent    が書く: 準備したテーブル名など
