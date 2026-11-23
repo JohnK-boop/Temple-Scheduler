@@ -8,7 +8,6 @@ from google.genai import types
 from .shared_key import RUN_HISTORY
 
 #agent側のorchestrator
-from .shared_key import log_start, log_end  
 #test or real agents
 USE_TEST_AGENTS = True
 
@@ -18,9 +17,9 @@ if USE_TEST_AGENTS:
     model_agent = testagent.model_agent()
     report_writer = testagent.report_writer()
 else:#REAL AGNETS
-    from agents.data_agent import as feature_engineer as data_agent
+    from agents.data_agent import feature_engineer as data_agent
     from agents.model_agent import model_agent
-    from agents.results_limitations.agent import as report_writer
+    from agents.results_limitations.agent import results_limitations_agent as report_writer
 
 MAX_ATTEMPTS = 3      # How many times the agents are going to proceed when it fails
 RETRY_WAIT_SEC = 0.1 
@@ -52,7 +51,7 @@ class Orchestrator(BaseAgent):
                         await asyncio.sleep(RETRY_WAIT_SEC)
                         continue  # retry
                     msg = (f"Process stoped. Done: {', '.join(done) if done else 'None'} / "
-                           f"Fail: {sub.name}（{attempt} attempts: {type(e).__name__}: {e}）")
+                           f"Fail: {sub.name}({attempt} attempts: {type(e).__name__}: {e})")
                     yield _text_event(self.name, msg, {RUN_HISTORY: history})
                     return
                 history.append({"agent": sub.name, "status": "done",
