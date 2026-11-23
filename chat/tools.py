@@ -78,15 +78,16 @@ async def read_csv_get_all_key(tool_context: ToolContext) -> dict[str, Any]:
     reader = await read_csv(part)
 
     if not reader:
-        return { "message": "Tell the user that the reader was null." }
+        result["message"] = "Tell the user that the reader was null."
+        return result
 
     first_row = next(reader, None)
     if first_row is None:
         result["message"] = "CSV file is empty."
         return result
 
-    for k, field in enumerate(first_row.keys()):
-        value = first_row[field]
+    for k, field in enumerate(first_row[0].split(",")):
+        value = field
         type_name = guess_type(value)
         result["column"].append({"key": field, "type": type_name})
     return result
