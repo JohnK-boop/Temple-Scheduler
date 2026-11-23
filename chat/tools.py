@@ -13,13 +13,14 @@ from typing import List, Dict, Any, Optional
 import csv
 
 
+# called before every model response
 async def save_user_csv(callback_context: CallbackContext):
     content = callback_context.user_content
     if not content or not content.parts:
         return None
 
     file_part = next(
-        (part for part in content.parts if part.inline_data and part.part_metadata.get("file_type") == "csv"),
+        (part for part in content.parts if part.inline_data),
         None
     )
 
@@ -30,6 +31,7 @@ async def save_user_csv(callback_context: CallbackContext):
     await callback_context.save_artifact(file_name, file_part)
     await upload_csv(file_name, callback_context)
     callback_context.state[CSV_NAME] = file_name
+    return None
 
 
 
@@ -56,8 +58,8 @@ def guess_type(value: str) -> str:
 
 async def get_csv_uploaded(tool_context: ToolContext) -> Optional[Part]:
     if CSV_NAME not in tool_context.state:
-        return False
-    artifact = await tool_context.load_artifact(tool_context.state[CSV_NAME])
+        return None
+    artifact = await tool_context.load_artifact(tool_context.state[CSV_NAME]) 
     return artifact
 
 
@@ -74,6 +76,9 @@ async def read_csv_get_all_key(tool_context: ToolContext) -> dict[str, Any]:
         result["message"] = "Tell user to upload a CSV file first."
         return result
     reader = await read_csv(part)
+
+    if not reader:
+        return { "message": "Tell the user that the reader was null." }
 
     first_row = next(reader, None)
     if first_row is None:
