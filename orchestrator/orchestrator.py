@@ -9,7 +9,7 @@ from .shared_key import RUN_HISTORY
 
 #agent側のorchestrator
 #test or real agents
-USE_TEST_AGENTS = True
+USE_TEST_AGENTS = False
 
 if USE_TEST_AGENTS:
     from . import testagent

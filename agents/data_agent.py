@@ -1,6 +1,8 @@
 from google.adk.agents.llm_agent import Agent
 from google.adk import Workflow
 from google.cloud import bigquery
+from google.adk.tools import ToolContext
+from orchestrator.shared_key import CSV_URI, TARGET_COLUMN
 
 import vertexai
 
@@ -14,13 +16,18 @@ bigquery_client = bigquery.Client(project=project_id)
 bigquery_client.create_table(f"{dataset_id}.{input_table_id}", exists_ok=True)
 bigquery_client.create_table(f"{dataset_id}.{output_table_id}", exists_ok=True)
 
+"""
+gets the name of the target column. no parameters.
+"""
+def target_column(tool_context: ToolContext):
+    return { "target": tool_context.state[TARGET_COLUMN] }
 
 """
 Prepares the environment for feature engineering work to be performed. 
 Does not take any arguments. Using this tool a second time may destroy existing
 feature engineering work.
 """
-def prepare():
+def prepare(tool_context: ToolContext):
     delete_table_job = bigquery_client.query(f"""
     DROP TABLE IF EXISTS {dataset_id}.{input_table_id};
                                              """)
@@ -46,7 +53,7 @@ def prepare():
     LOAD DATA OVERWRITE {dataset_id}.temp_table
     FROM FILES (
         format = 'CSV',
-        uris = ['gs://cis3203-uploads/student-por.csv']
+        uris = ['{tool_context.state[CSV_URI]}']
     );
                                          """)
     load_csv_job.result()
@@ -372,60 +379,42 @@ client = vertexai.init(
     location='us-central1'
 )
 
-
 feature_engineer = Agent(
     model='gemini-3.5-flash',
     name='feature_engineer',
     description='Performs feature engineering and ingests data into BigQuery.',
-    instruction=""" 
-    You have access to the following tools:
+    instruction="""
+First, copy the target column directly to the output table. Do not use the
+target column in any other computed columns.
 
-    'list_input_columns' - list the columns in the input table, along with
-    their types
+For each feature in the input dataset:
+1. determine whether it should be included as input to the machine learning model.
+Consider criteria such as relevance, overlap with other features, and effect
+size.
 
-    'normalize_column' - normalize the column's contents from 0 to 1.
-    """,
-#     instruction="""
-# When necessary, you can use the \'use_bigquery\' tool (which takes a query as its 
-# argument) to assist with your task.
-# Use the 'google_search' tool to consult bigquery documentation if you aren't
-# sure how to perform any operations.
-#
-# Examine the 'input' dataset. The 'input' dataset is the data for a machine
-# learning application. You will be told which features in the dataset are the
-# targets, all others can be used as input to the machine learning model. 
-#
-# Create the new dataset 'input_engineered'. This will store the results of your
-# feature engineering.
-#
-# For each feature:
-# 1. determine whether it should be included as input to the machine learning model.
-# Consider criteria such as relevance, overlap with other features, and effect
-# size.
-#
-# 2. determine whether the data should be transformed in some way. For example,
-#    numeric data might need to be normalized, while categorical data might need
-#    to be encoded using either numerical or one-hot encodings.
-#
-# 3. If you have determined that the data should be included, copy it from the
-#    input dataset to the input_engineered dataset while applying the determined
-#    transformation (if any).
-#
-# After these steps have been performed for all features, determine whether any computed
-# features should also be included. This could include logs, roots or other
-# functions applied to existing numerical features, as well as features calculated
-# from multiple other features such as products or sums. Finally, consider whether
-# numeric data should be binned or bucketed. When deciding whether to create a
-# computed feature, use criteria of relevance, usefulness and overlap with
-# previous features. Create the computed features in the input_engineered dataset.
-#
-# Finally, report all the features chosen and decisions made, as well as the
-# reasoning behind those decisions.
-# """,
+2. determine whether the data should be transformed in some way. For example,
+   numeric data might need to be normalized or have the logarithm taken, while
+   categorical data should be encoded using a numerical encoding.
+
+3. If you have determined that the data should be included, copy it from the
+   input dataset to the input_engineered dataset while applying the determined
+   transformation (if any).
+
+After these steps have been performed for all features, determine whether any computed
+features should also be included. This could include logs, roots or other
+functions applied to existing numerical features, as well as features calculated
+from multiple other features such as products or sums. Finally, consider whether
+numeric data should be binned or bucketed. When deciding whether to create a
+computed feature, use criteria of relevance, usefulness and overlap with
+previous features. Create the computed features in the input_engineered dataset.
+
+Finally, report all the features chosen and decisions made, as well as the
+reasoning behind those decisions.
+""",
     tools = [prepare, list_input_columns, list_output_columns, normalize_column, copy_column, 
              logarithm_column, feature_cross,
              feature_difference, impute_mean, impute_mode,
-             has_null]
+             has_null, target_column]
 )
 
 data_agent = Workflow(
