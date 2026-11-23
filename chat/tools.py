@@ -68,7 +68,7 @@ async def read_csv(part: Part) -> csv.reader:
     reader = csv.reader(io.StringIO(text))
     return reader
 
-
+MAX_ROWS_GUESS = 1000
 async def read_csv_get_all_key(tool_context: ToolContext) -> dict[str, Any]:
     result = {"message": "", "column": []}
     part = await get_csv_uploaded(tool_context)
@@ -81,15 +81,43 @@ async def read_csv_get_all_key(tool_context: ToolContext) -> dict[str, Any]:
         result["message"] = "Tell the user that the reader was null."
         return result
 
+    count_row = 0
+    guess_data = {}
+
     first_row = next(reader, None)
     if first_row is None:
         result["message"] = "CSV file is empty."
         return result
 
-    for k, field in enumerate(first_row[0].split(",")):
-        value = field
-        type_name = guess_type(value)
-        result["column"].append({"key": field, "type": type_name})
+    while True:
+        if count_row >= MAX_ROWS_GUESS:
+            break
+        iter_row = next(reader, None)
+        if iter_row is None:
+            if count_row == 0:
+                result["message"] = "CSV file is empty."
+                return result
+            else:
+                break
+        count_row += 1
+        for k, field in enumerate(iter_row):
+            value = field
+            if str(value).strip() == "":
+                continue
+            type_name = guess_type(value)
+            if k not in guess_data:
+                guess_data[k] = {type_name: 1}
+            else:
+                if type_name not in guess_data[k]:
+                    guess_data[k][type_name] = 1
+                else:
+                    guess_data[k][type_name] += 1
+
+    for g in guess_data.items():
+        index, type_counts = g
+        most_common_type = max(type_counts, key=type_counts.get)
+        result["column"].append({"key": first_row[index], "type": most_common_type})
+
     return result
 
 
@@ -112,6 +140,7 @@ async def select_target(tool_context: ToolContext, target_column: str) -> dict[s
         return result
 
     tool_context.state["target_column"] = target_column
+    return {"message": f"Target column '{target_column}' selected.", "target_column": target_column}
 
 
 async def select_model(tool_context: ToolContext, model_type: str) -> dict[str, Any]:
