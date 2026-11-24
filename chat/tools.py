@@ -5,12 +5,29 @@ from google.adk.tools.tool_context import ToolContext
 from google.adk.agents.callback_context import CallbackContext
 
 from orchestrator.shared_key import CSV_URI, CSV_NAME, USER_REQUEST
-from google.genai.types import Part
+from google.genai.types import Part, Blob
 from agents.upload_tools import upload_csv
 from agents.model_tools import CLASSIFICATION_MODELS, REGRESSION_MODELS
 from typing import List, Dict, Any, Optional
 
 import csv
+
+
+def tidy_csv_func(data: bytes) -> bytes:
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data
+
+    try:
+        dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")  # guess the format
+    except csv.Error:
+        dialect = csv.excel
+
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerows(csv.reader(io.StringIO(text), dialect))
+    return out.getvalue().encode("utf-8")
 
 
 # called before every model response
@@ -27,12 +44,16 @@ async def save_user_csv(callback_context: CallbackContext):
     if file_part is None:
         return None
 
+    tidy_csv = Part(inline_data=Blob(
+        data=tidy_csv_func(file_part.inline_data.data),
+        mime_type="text/csv",
+    ))
+
     file_name = str(uuid.uuid4()) + ".csv"
-    await callback_context.save_artifact(file_name, file_part)
+    await callback_context.save_artifact(file_name, tidy_csv)
     await upload_csv(file_name, callback_context)
     callback_context.state[CSV_NAME] = file_name
     return None
-
 
 
 def guess_type(value: str) -> str:
@@ -59,7 +80,7 @@ def guess_type(value: str) -> str:
 async def get_csv_uploaded(tool_context: ToolContext) -> Optional[Part]:
     if CSV_NAME not in tool_context.state:
         return None
-    artifact = await tool_context.load_artifact(tool_context.state[CSV_NAME]) 
+    artifact = await tool_context.load_artifact(tool_context.state[CSV_NAME])
     return artifact
 
 
@@ -68,7 +89,10 @@ async def read_csv(part: Part) -> csv.reader:
     reader = csv.reader(io.StringIO(text))
     return reader
 
+
 MAX_ROWS_GUESS = 1000
+
+
 async def read_csv_get_all_key(tool_context: ToolContext) -> dict[str, Any]:
     result = {"message": "", "column": []}
     part = await get_csv_uploaded(tool_context)
