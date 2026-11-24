@@ -20,7 +20,6 @@ The model type the user chose:
 {model_type?}
 
 From these, take:
-- table: the table the data agent created
 - target: the column the user wants to predict
 - model_type: the model type the user chose
 
@@ -29,7 +28,7 @@ Steps:
 2. Run evaluate_model on the model_name that train_model returns.
 3. Run explain_model on it.
 
-If any of the three values is missing, stop and say which one.
+If any of the target or model_type is missing, stop and say which one.
 If a tool returns an error, stop and send the error exactly as it was returned.
 
 At the end return only: the values you used, the scores from evaluate_model,

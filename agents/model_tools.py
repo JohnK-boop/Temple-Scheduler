@@ -2,8 +2,9 @@
 
 import re
 from google.cloud import bigquery
+from orchestrator.shared_key import PROJECT_ID, TRAINING_TABLE
 
-PROJECT = "temple-scheduler-cisproj"
+PROJECT = PROJECT_ID
 DATASET = "agent_data"
 
 client = bigquery.Client(project=PROJECT)
@@ -37,7 +38,7 @@ def list_model_options(task_type: str = ""):
     else:
         return {"ok": True, "classification": CLASSIFICATION_MODELS, "regression": REGRESSION_MODELS}
 
-def train_model(table: str, target: str, model_type: str, model_name: str = ""):
+def train_model(target: str, model_type: str, model_name: str = ""):
     """Trains a BigQuery ML model on a table (like "agent_data.student_por") to predict the target column.
     Leave model_name blank to get an automatic versioned name."""
     try:
@@ -47,9 +48,8 @@ def train_model(table: str, target: str, model_type: str, model_name: str = ""):
             return {"ok": False, "error": "Unknown model type " + model_type, "hint": "use list_model_options"}
 
         if model_name == "":
-            model_name = make_model_name(table, model_type)
+            model_name = make_model_name("agent", model_type)
 
-        check_name(table)
         check_name(target)
         check_name(model_name)
 
@@ -60,8 +60,8 @@ def train_model(table: str, target: str, model_type: str, model_name: str = ""):
           input_label_cols = ['{target}'],
           enable_global_explain = TRUE
         ) AS
-        SELECT *
-        FROM `{PROJECT}.{table}`
+        SELECT * EXCEPT (row_id)
+        FROM `{PROJECT}.{TRAINING_TABLE}`
         """
 
         run_query(sql)
@@ -119,16 +119,15 @@ def explain_model(model_name: str, top_n: int = 10):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-def predict(model_name: str, table: str, limit: int = 10):
+def predict(model_name: str, limit: int = 10):
     """Uses a trained model to make predictions on a table."""
     try:
         check_name(model_name)
-        check_name(table)
 
         sql = f"""
         SELECT *
         FROM ML.PREDICT(MODEL `{PROJECT}.{DATASET}.{model_name}`,
-          (SELECT * FROM `{PROJECT}.{table}`))
+          (SELECT * FROM `{PROJECT}.{TRAINING_TABLE}`))
         LIMIT {int(limit)}
         """
         rows = run_query(sql)

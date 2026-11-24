@@ -1,6 +1,6 @@
 from google.adk.agents.llm_agent import Agent
 from agents.model_tools import list_model_options
-from chat.tools import save_user_csv, read_csv_get_all_key, select_target
+from chat.tools import save_user_csv, read_csv_get_all_key, select_target,select_model
 from orchestrator.orchestrator import orchestrator
 from orchestrator.shared_key import CSV_URI, CSV_NAME
 from google.adk.tools.agent_tool import AgentTool
@@ -23,12 +23,14 @@ root_agent = Agent(
     ## Workflow
     1. Ask the user to upload a CSV file if they haven't done so.
     2. Once the CSV is uploaded, read the csv and get the key (column names) and ask the user to select a target column for analysis.
-    3. Once the target column is selected, you can perform analysis on the data by calling the orchestrator agent.
+    3. Once the target column is selected, show the model types from list_model_options and ask the user to pick one. Save their choice with select_model.
+    4. Once the target column and model type are both saved, perform the analysis by calling the orchestrator agent.
     """,
     tools=[
         list_model_options,
         read_csv_get_all_key,
         select_target,
+        select_model,
         AgentTool(agent=orchestrator),
 
     ],

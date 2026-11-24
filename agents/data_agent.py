@@ -2,12 +2,12 @@ from google.adk.agents.llm_agent import Agent
 from google.adk import Workflow
 from google.cloud import bigquery
 from google.adk.tools import ToolContext
-from orchestrator.shared_key import CSV_URI, TARGET_COLUMN
+from orchestrator.shared_key import CSV_URI, TARGET_COLUMN, PROJECT_ID
 
 import vertexai
 
 
-project_id = "temple-scheduler-cisproj"
+project_id = PROJECT_ID
 dataset_id = "agent_data"
 input_table_id = "input"
 output_table_id = "input_engineered"
@@ -375,7 +375,7 @@ def has_null(column_name):
     }
 
 client = vertexai.init(
-    project='temple-scheduler-cisproj',
+    project=PROJECT_ID,
     location='us-central1'
 )
 

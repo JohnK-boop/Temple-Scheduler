@@ -18,7 +18,7 @@ data = "agent_data.student_por_clean"
 done = False
 t = threading.Thread(target=animate, args=("Training",))
 t.start()
-result = train_model(data, "label", "LOGISTIC_REG", model)
+result = train_model("label", "LOGISTIC_REG", model)
 done = True
 t.join()
 print(result)
@@ -45,5 +45,5 @@ if not result["ok"]:
 
 input("\n\nPress Enter to Predict with the Model\n")
 
-result = predict(model, data, 3)
+result = predict(model, 3)
 print(result)

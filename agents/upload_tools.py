@@ -1,9 +1,9 @@
 import os
 from google.adk.tools import ToolContext
 from google.cloud import storage
-from orchestrator.shared_key import CSV_URI, CSV_NAME
+from orchestrator.shared_key import CSV_URI, CSV_NAME, GCS_BUCKET
 
-BUCKET_NAME = "cis3203-uploads"
+BUCKET_NAME = GCS_BUCKET
 client = storage.Client()
 bucket = client.bucket(BUCKET_NAME)
 
